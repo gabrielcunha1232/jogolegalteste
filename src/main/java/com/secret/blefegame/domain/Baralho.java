@@ -47,7 +47,7 @@ public class Baralho {
     }
 
     public void descartar(Faccao faccao) {
-        Objects.requireNonNull(faccao, "nao da para descar algo que esta vazio");
+        Objects.requireNonNull(faccao, "nao da para descartar algo que esta vazio");
 
         this.descarte.add(faccao);
     }
@@ -65,9 +65,12 @@ public class Baralho {
             throw new IllegalStateException("nao existe mais uma quantidade razoavel de cartas para jogar");
         }
 
-        Collections.shuffle(this.descarte, randomGenerator);
         this.compra.addAll(this.descarte);
+        List<Faccao> cartasEmbaralhadas = new ArrayList<>(this.compra);
+        Collections.shuffle(cartasEmbaralhadas, randomGenerator);
         this.descarte.clear();
+        this.compra.clear();
+        this.compra.addAll(cartasEmbaralhadas);
     }
 
     int totalCartasBaralho() {

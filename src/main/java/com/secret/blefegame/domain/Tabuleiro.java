@@ -52,7 +52,7 @@ public class Tabuleiro {
     }
 
     public boolean vetoDisponivel() {
-        return this.fascistasPromulgadas == 5;
+        return this.fascistasPromulgadas >= 5;
     }
 
     public int liberaisPromulgadas() {

@@ -13,13 +13,13 @@ public record Governo(UUID presidenteId, UUID chancelerId){
         }
     }
 
-    public static Governo iniciarComPresidente(UUID presidenteID) {
-        return new Governo(presidenteID, null);
+    public static Governo iniciarComPresidente(UUID presidenteId) {
+        return new Governo(presidenteId, null);
     }
 
-    public Governo comChanceler(UUID chancelerID) {
-        Objects.requireNonNull(chancelerID, "chanceler ID nao pode ser nulo");
-        return new Governo(this.presidenteId, chancelerID);
+    public Governo comChanceler(UUID chancelerId) {
+        Objects.requireNonNull(chancelerId, "chanceler ID nao pode ser nulo");
+        return new Governo(this.presidenteId, chancelerId);
     }
 
     public boolean temChancelerNomeado() {
