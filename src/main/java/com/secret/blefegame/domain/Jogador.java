@@ -12,10 +12,10 @@ public class Jogador {
 
     Jogador(UUID id, String nome, Papel papel) {
         this.id = Objects.requireNonNull(id, "id nao pode ser nulo");
+        this.nome = Objects.requireNonNull(nome, "nome nao pode ser nulo");
         if (nome.isBlank()) {
             throw new IllegalArgumentException("Nome não pode estar vazio");
         }
-        this.nome = Objects.requireNonNull(nome, "nome nao pode ser nulo");
         this.papel = Objects.requireNonNull(papel, "papel nao pode ser inexistente");
         this.vivo = true;
     }
