@@ -10,6 +10,6 @@ public record Inscricao(UUID id, String nome) {
         if (nome.isBlank()) {
             throw new IllegalArgumentException("Nome não pode estar vazio");
         }
-        this.nome = Objects.requireNonNull(nome, "nome nao pode ser nulo");
+        this.nome = Objects.requireNonNull(nome, "nome nao pode ser nulo").strip();
     }
 }
