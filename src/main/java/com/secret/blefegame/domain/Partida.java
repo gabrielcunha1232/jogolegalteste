@@ -1,9 +1,6 @@
 package com.secret.blefegame.domain;
 
-import com.secret.blefegame.domain.evento.EventoDominio;
-import com.secret.blefegame.domain.evento.JogadorEntrou;
-import com.secret.blefegame.domain.evento.PapelDistribuido;
-import com.secret.blefegame.domain.evento.PartidaIniciada;
+import com.secret.blefegame.domain.evento.*;
 import com.secret.blefegame.domain.excecao.AcaoInvalidaException;
 
 import java.util.*;
@@ -22,6 +19,14 @@ public class Partida {
     private UUID presidenteAtualId;
     private UUID hostSala;
 
+    private Baralho baralho;
+    private Tabuleiro tabuleiro;
+    private Governo governoAtual;
+    private Governo governoAnteriorEleito;
+    private Votacao votacao;
+    private SessaoLegislativa sessaoLegislativa;
+    private int eleicoesFracassadasSeguidas;
+
     public Partida(UUID hostSala, String nomeHost, String codigoSala, RandomGenerator randomGenerator) {
         Objects.requireNonNull(hostSala, "id do host nao pode ser nulo");
         Objects.requireNonNull(codigoSala, "codigo nao pode ser nulo");
@@ -38,6 +43,14 @@ public class Partida {
         this.jogadores = new ArrayList<>();
         this.fase = FaseDoJogo.AGUARDANDO_JOGADORES;
         this.presidenteAtualId = null;
+
+        this.baralho = null;
+        this.tabuleiro = null;
+        this.governoAtual = null;
+        this.governoAnteriorEleito = null;
+        this.votacao = null;
+        this.sessaoLegislativa = null;
+        this.eleicoesFracassadasSeguidas = 0;
 
         inscricoes.add(new Inscricao(hostSala, nomeHost));
         this.hostSala = hostSala;
@@ -83,6 +96,10 @@ public class Partida {
         }
         this.presidenteAtualId = escolherPrimeiroPresidente();
         this.fase = FaseDoJogo.DISTRIBUICAO_PAPEIS;
+
+        this.baralho = new Baralho(this.randomGenerator);
+        this.tabuleiro = new Tabuleiro(this.jogadores.size());
+        this.governoAtual = Governo.iniciarComPresidente(this.presidenteAtualId);
 
         List<EventoDominio> eventos = new ArrayList<>();
 
@@ -176,6 +193,64 @@ public class Partida {
         return eventos;
     }
 
+    public List<EventoDominio> nomearChanceler(UUID presidenteId, UUID candidatoId) {
+        List<EventoDominio> eventos = new ArrayList<>();
+
+        // validar que presidenteId e candidatoId não são nulos
+        Objects.requireNonNull(presidenteId, "presidente id nao pode ser nulo");
+        Objects.requireNonNull(candidatoId, "id do candidato a chanceler nao pode ser nulo");
+
+        // exigir fase == ELEICAO_NOMEACAO, senão AcaoInvalidaException
+        if (this.fase != FaseDoJogo.ELEICAO_NOMEACAO) {
+            throw new AcaoInvalidaException("fase do jogo deve ser de eleicao");
+        }
+        // exigir que presidenteId seja o presidenteAtualId (só o presidente nomeia)
+        if (!this.presidenteAtualId.equals(presidenteId)) {
+            throw new AcaoInvalidaException("o atual presidente nao é o mesmo do que quer eleger chanceler");
+        }
+        // buscar o candidato com buscarJogador(candidatoId); se não existir, AcaoInvalidaException
+        Jogador jogadorNoTabuleiro = buscarJogador(candidatoId);
+        Objects.requireNonNull(jogadorNoTabuleiro, "jogador nao existe na lista");
+        // exigir que o candidato seja elegível: candidatoElegivel(candidatoId)
+        if (!candidatoElegivel(candidatoId)) {
+            throw new IllegalArgumentException("candidato nao pode ser eleito chanceler");
+        }
+        // montar o governo: Governo.iniciarComPresidente(presidenteId).comChanceler(candidatoId)
+        Governo.iniciarComPresidente(presidenteId).comChanceler(candidatoId);
+        // abrir a votação: new Votacao(idsJogadoresVivos())
+        Votacao novaVotacao = new Votacao(idsJogadoresVivos());
+
+        // mudar a fase para ELEICAO_VOTACAO
+        this.fase = FaseDoJogo.ELEICAO_VOTACAO;
+        // retornar uma lista com o evento ChancelerNomeado
+        eventos.add(new GovernoEleito(presidenteId, candidatoId));
+        return eventos;
+    }
+
+    public List<EventoDominio> votar(UUID jogadorId, Voto voto) {
+        // validar que jogadorId e voto não são nulos
+
+        // exigir fase == ELEICAO_VOTACAO
+
+        // registrar o voto na votacao (a Votacao já barra voto duplicado e quem não pode votar)
+
+        // criar o evento VotoRegistrado (quem votou e quantos já votaram, NUNCA o voto)
+        // dica: a Votacao hoje só expõe totalVotosComputados(); você precisa também do total esperado.
+        // decida se adiciona esse método à Votacao
+
+        // se a votacao ainda não está completa, retornar só o VotoRegistrado
+
+        // se está completa:
+        //   - pegar os votos revelados e o resultado (aprovada ou não)
+        //   - criar o evento VotosRevelados
+        //   - zerar a votacao (this.votacao = null)
+        //   - se aprovada, juntar os eventos de aprovarGoverno()
+        //   - se rejeitada, juntar os eventos de rejeitarGoverno()
+
+        // retornar a lista com todos os eventos, na ordem em que aconteceram
+        throw new UnsupportedOperationException("implementar votar");
+    }
+
     public FaseDoJogo fase() {
         return this.fase;
     }
@@ -186,5 +261,31 @@ public class Partida {
 
     public int totalInscritos() {
         return this.inscricoes.size();
+    }
+
+    private boolean candidatoElegivel(UUID candidatoId) {
+        if (this.presidenteAtualId.equals(candidatoId)) {
+            return false;
+        }
+
+        if (this.governoAnteriorEleito.chancelerId().equals(candidatoId)) {
+            return false;
+        }
+
+        return !this.governoAnteriorEleito.presidenteId().equals(candidatoId) || idsJogadoresVivos().size() <= 5;
+    }
+
+    private Jogador buscarJogador(UUID jogadorId) {
+        return this.jogadores.stream()
+                .filter(j -> j.id().equals(jogadorId))
+                .findFirst().orElseThrow(() -> new IllegalArgumentException("jogador não está presente na lista"));
+    }
+
+    private Set<UUID> idsJogadoresVivos() {
+        return Set.copyOf(
+                this.jogadores.stream()
+                .map(Jogador::id)
+                .toList()
+        );
     }
 }
