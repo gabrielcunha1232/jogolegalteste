@@ -22,11 +22,11 @@ public class Partida {
     private UUID presidenteAtualId;
     private UUID hostSala;
 
-    public Partida(UUID hostSala, String codigoSala, RandomGenerator randomGenerator) {
+    public Partida(UUID hostSala, String nomeHost, String codigoSala, RandomGenerator randomGenerator) {
         Objects.requireNonNull(hostSala, "id do host nao pode ser nulo");
         Objects.requireNonNull(codigoSala, "codigo nao pode ser nulo");
         if (codigoSala.isBlank()) {
-            throw new AcaoInvalidaException("codigo da sala esta vazio");
+            throw new IllegalArgumentException("codigo da sala esta vazio");
         }
         Objects.requireNonNull(randomGenerator, "objeto de aletoriedade nao pode ser nulo");
 
@@ -38,6 +38,8 @@ public class Partida {
         this.jogadores = new ArrayList<>();
         this.fase = FaseDoJogo.AGUARDANDO_JOGADORES;
         this.presidenteAtualId = null;
+
+        inscricoes.add(new Inscricao(hostSala, nomeHost));
         this.hostSala = hostSala;
     }
 
@@ -76,12 +78,11 @@ public class Partida {
             throw new AcaoInvalidaException("para iniciar deve ser o anfitriao");
         }
         List<Papel> papeis = sortearPapeis(totalInscritos());
-        this.fase = FaseDoJogo.DISTRIBUICAO_PAPEIS;
         for (Inscricao i : this.inscricoes) {
             this.jogadores.add(new Jogador(i.id(), i.nome(), papeis.removeFirst()));
         }
-
         this.presidenteAtualId = escolherPrimeiroPresidente();
+        this.fase = FaseDoJogo.DISTRIBUICAO_PAPEIS;
 
         List<EventoDominio> eventos = new ArrayList<>();
 
@@ -138,7 +139,7 @@ public class Partida {
         Collections.shuffle(papeis, this.randomGenerator);
 
         if (papeis.size() != totalJogadores) {
-            throw new AcaoInvalidaException("o que foi sorteado nao esta de acordo com o total de jogadores");
+            throw new IllegalStateException("o que foi sorteado nao esta de acordo com o total de jogadores");
         }
 
         return papeis;
