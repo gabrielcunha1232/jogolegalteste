@@ -1,7 +1,6 @@
 package com.secret.blefegame.domain.evento;
 
 import com.secret.blefegame.domain.Faccao;
-import com.secret.blefegame.domain.excecao.AcaoInvalidaException;
 
 import java.util.Objects;
 

@@ -1,5 +1,7 @@
 package com.secret.blefegame.domain;
 
+import com.secret.blefegame.domain.excecao.AcaoInvalidaException;
+
 import java.util.*;
 
 public class Votacao {
@@ -20,10 +22,10 @@ public class Votacao {
         Objects.requireNonNull(jogadorId, "ID não pode ser nulo");
         Objects.requireNonNull(voto, "voto tem que ser dado");
         if (!this.votantesEsperados.contains(jogadorId)) {
-            throw new IllegalStateException("Jogador não pode votar");
+            throw new AcaoInvalidaException("Jogador não pode votar");
         }
         if (this.votosRegistrados.putIfAbsent(jogadorId, voto) != null) {
-            throw new IllegalStateException("Jogador não pode votar duas vezes");
+            throw new AcaoInvalidaException("Jogador não pode votar duas vezes");
         }
     }
 

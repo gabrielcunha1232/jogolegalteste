@@ -17,7 +17,7 @@ public class Partida {
     private final List<Jogador> jogadores;
     private FaseDoJogo fase;
     private UUID presidenteAtualId;
-    private UUID hostSala;
+    private final UUID hostSala;
 
     private Baralho baralho;
     private Tabuleiro tabuleiro;
@@ -29,6 +29,10 @@ public class Partida {
 
     public Partida(UUID hostSala, String nomeHost, String codigoSala, RandomGenerator randomGenerator) {
         Objects.requireNonNull(hostSala, "id do host nao pode ser nulo");
+        Objects.requireNonNull(nomeHost, "nome do host nao pode ser nulo");
+        if (nomeHost.isBlank()) {
+            throw new IllegalArgumentException("nome do host nao pode ser vazio");
+        }
         Objects.requireNonNull(codigoSala, "codigo nao pode ser nulo");
         if (codigoSala.isBlank()) {
             throw new IllegalArgumentException("codigo da sala esta vazio");
@@ -196,59 +200,62 @@ public class Partida {
     public List<EventoDominio> nomearChanceler(UUID presidenteId, UUID candidatoId) {
         List<EventoDominio> eventos = new ArrayList<>();
 
-        // validar que presidenteId e candidatoId não são nulos
         Objects.requireNonNull(presidenteId, "presidente id nao pode ser nulo");
         Objects.requireNonNull(candidatoId, "id do candidato a chanceler nao pode ser nulo");
 
-        // exigir fase == ELEICAO_NOMEACAO, senão AcaoInvalidaException
         if (this.fase != FaseDoJogo.ELEICAO_NOMEACAO) {
             throw new AcaoInvalidaException("fase do jogo deve ser de eleicao");
         }
-        // exigir que presidenteId seja o presidenteAtualId (só o presidente nomeia)
+
         if (!this.presidenteAtualId.equals(presidenteId)) {
             throw new AcaoInvalidaException("o atual presidente nao é o mesmo do que quer eleger chanceler");
         }
-        // buscar o candidato com buscarJogador(candidatoId); se não existir, AcaoInvalidaException
+
         Jogador jogadorNoTabuleiro = buscarJogador(candidatoId);
         Objects.requireNonNull(jogadorNoTabuleiro, "jogador nao existe na lista");
-        // exigir que o candidato seja elegível: candidatoElegivel(candidatoId)
-        if (!candidatoElegivel(candidatoId)) {
-            throw new IllegalArgumentException("candidato nao pode ser eleito chanceler");
-        }
-        // montar o governo: Governo.iniciarComPresidente(presidenteId).comChanceler(candidatoId)
-        Governo.iniciarComPresidente(presidenteId).comChanceler(candidatoId);
-        // abrir a votação: new Votacao(idsJogadoresVivos())
-        Votacao novaVotacao = new Votacao(idsJogadoresVivos());
 
-        // mudar a fase para ELEICAO_VOTACAO
+        if (!candidatoElegivel(candidatoId)) {
+            throw new AcaoInvalidaException("candidato nao pode ser eleito chanceler");
+        }
+
+        this.governoAtual = Governo.iniciarComPresidente(presidenteId).comChanceler(candidatoId);
+        this.votacao = new Votacao(idsJogadoresVivos());
         this.fase = FaseDoJogo.ELEICAO_VOTACAO;
-        // retornar uma lista com o evento ChancelerNomeado
-        eventos.add(new GovernoEleito(presidenteId, candidatoId));
+
+        eventos.add(new ChancelerNomeado(presidenteId, candidatoId));
         return eventos;
     }
 
     public List<EventoDominio> votar(UUID jogadorId, Voto voto) {
-        // validar que jogadorId e voto não são nulos
+        List<EventoDominio> eventos = new ArrayList<>();
 
-        // exigir fase == ELEICAO_VOTACAO
+        Objects.requireNonNull(jogadorId, "jogador id nao pode ser nulo");
+        Objects.requireNonNull(voto, "voto nao pode ser nulo");
 
-        // registrar o voto na votacao (a Votacao já barra voto duplicado e quem não pode votar)
+        if (this.fase != FaseDoJogo.ELEICAO_VOTACAO) {
+            throw new IllegalStateException("fase nao coincide com o que precisamos");
+        }
 
-        // criar o evento VotoRegistrado (quem votou e quantos já votaram, NUNCA o voto)
-        // dica: a Votacao hoje só expõe totalVotosComputados(); você precisa também do total esperado.
-        // decida se adiciona esse método à Votacao
+        this.votacao.registrar(jogadorId, voto);
+        eventos.add(new VotoRegistrado(jogadorId, this.votacao.totalVotosComputados(), idsJogadoresVivos().size()));
 
-        // se a votacao ainda não está completa, retornar só o VotoRegistrado
+        if (!this.votacao.completa()) {
+            return eventos;
+        }
 
-        // se está completa:
-        //   - pegar os votos revelados e o resultado (aprovada ou não)
-        //   - criar o evento VotosRevelados
-        //   - zerar a votacao (this.votacao = null)
-        //   - se aprovada, juntar os eventos de aprovarGoverno()
-        //   - se rejeitada, juntar os eventos de rejeitarGoverno()
+        Map<UUID, Voto> revelacaoVotos = this.votacao.votosRevelados();
+        boolean aprovado = this.votacao.aprovada();
 
-        // retornar a lista com todos os eventos, na ordem em que aconteceram
-        throw new UnsupportedOperationException("implementar votar");
+        eventos.add(new VotosRevelados(revelacaoVotos, aprovado));
+        this.votacao = null;
+
+        if (aprovado) {
+            eventos.addAll(aprovarGoverno());
+        } else {
+            eventos.addAll(rejeitarGoverno());
+        }
+
+        return eventos;
     }
 
     public FaseDoJogo fase() {
@@ -268,22 +275,105 @@ public class Partida {
             return false;
         }
 
-        if (this.governoAnteriorEleito.chancelerId().equals(candidatoId)) {
+        if (!buscarJogador(candidatoId).estaVivo()) {
             return false;
         }
 
-        return !this.governoAnteriorEleito.presidenteId().equals(candidatoId) || idsJogadoresVivos().size() <= 5;
+        if (this.governoAnteriorEleito != null) {
+            return !this.governoAnteriorEleito.chancelerId().equals(candidatoId) && !this.governoAnteriorEleito.presidenteId().equals(candidatoId);
+        }
+
+        return idsJogadoresVivos().size() <= 5;
+    }
+
+    private List<EventoDominio> aprovarGoverno() {
+        List<EventoDominio> eventos = new ArrayList<>();
+
+        UUID chancelerId = this.governoAtual.chancelerId();
+        if (this.tabuleiro.hitlerEleitoValeVitoria() && buscarJogador(chancelerId).papel().ehHitler()) {
+            this.fase = FaseDoJogo.FIM_DE_JOGO;
+            eventos.add(new FimDeJogo(Faccao.FASCISTA, MotivoVitoria.HITLER_ELEITO));
+            return eventos;
+        }
+
+        this.eleicoesFracassadasSeguidas = 0;
+        this.governoAnteriorEleito = this.governoAtual;
+
+        eventos.add(new GovernoEleito(this.presidenteAtualId, this.governoAtual.chancelerId()));
+        eventos.addAll(iniciarSessaoLegislativa());
+        return eventos;
+    }
+
+    private List<EventoDominio> rejeitarGoverno() {
+        List<EventoDominio> eventoDominios = new ArrayList<>();
+        this.eleicoesFracassadasSeguidas++;
+        int numEleicoesFracassadas = this.eleicoesFracassadasSeguidas;
+
+        if (numEleicoesFracassadas == 3) {
+            Faccao carta = this.baralho.comprarUma();
+            this.tabuleiro.promulgar(carta);
+
+            this.eleicoesFracassadasSeguidas = 0;
+            this.governoAnteriorEleito = null;
+
+            Optional<Faccao> vencedora = tabuleiro.vitoriaPorPoliticas();
+            if (vencedora.isPresent()) {
+                this.fase = FaseDoJogo.FIM_DE_JOGO;
+                MotivoVitoria motivoVitoria = (vencedora.get() == Faccao.LIBERAL)
+                        ? MotivoVitoria.POLITICAS_LIBERAIS
+                        : MotivoVitoria.POLITICAS_FASCISTAS;
+
+                eventoDominios.add(new EleicaoRejeitada(proximoPresidente(), numEleicoesFracassadas));
+                eventoDominios.add(new FimDeJogo(vencedora.get(), motivoVitoria));
+                return eventoDominios;
+            }
+        }
+
+        this.presidenteAtualId = proximoPresidente();
+
+        this.governoAtual = Governo.iniciarComPresidente(this.presidenteAtualId);
+        this.fase = FaseDoJogo.ELEICAO_NOMEACAO;
+        eventoDominios.add(new EleicaoRejeitada(this.presidenteAtualId, numEleicoesFracassadas));
+        return eventoDominios;
+    }
+
+    private UUID proximoPresidente() {
+        int total = this.jogadores.size();
+        int jogadorIndice = this.jogadores.indexOf(buscarJogador(this.presidenteAtualId));
+        for (int passo = 1; passo < total; passo++) {
+            int proximoIndice = (jogadorIndice + passo) % total;
+            Jogador candidato = this.jogadores.get(proximoIndice);
+
+            if (candidato.estaVivo()) {
+                return candidato.id();
+            }
+        }
+
+        throw new AcaoInvalidaException("nenhum jogador está mais vivo");
+    }
+
+    private List<EventoDominio> iniciarSessaoLegislativa() {
+        List<EventoDominio> eventos = new ArrayList<>();
+        List<Faccao> tresCartasCompradas = this.baralho.comprarTres();
+
+        this.sessaoLegislativa = new SessaoLegislativa(this.presidenteAtualId, this.governoAtual.chancelerId(),
+                this.tabuleiro.vetoDisponivel(), tresCartasCompradas);
+        this.fase = FaseDoJogo.SESSAO_LEGISLATIVA_PRESIDENTE;
+
+        eventos.add(new CartasdoPresidente(this.presidenteAtualId, tresCartasCompradas));
+        return eventos;
     }
 
     private Jogador buscarJogador(UUID jogadorId) {
         return this.jogadores.stream()
                 .filter(j -> j.id().equals(jogadorId))
-                .findFirst().orElseThrow(() -> new IllegalArgumentException("jogador não está presente na lista"));
+                .findFirst().orElseThrow(() -> new AcaoInvalidaException("jogador não está presente na lista"));
     }
 
     private Set<UUID> idsJogadoresVivos() {
         return Set.copyOf(
                 this.jogadores.stream()
+                .filter(Jogador::estaVivo)
                 .map(Jogador::id)
                 .toList()
         );
