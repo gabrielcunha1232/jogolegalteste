@@ -213,7 +213,6 @@ public class Partida {
         }
 
         Jogador jogadorNoTabuleiro = buscarJogador(candidatoId);
-        Objects.requireNonNull(jogadorNoTabuleiro, "jogador nao existe na lista");
 
         if (!candidatoElegivel(candidatoId)) {
             throw new AcaoInvalidaException("candidato nao pode ser eleito chanceler");
@@ -234,7 +233,7 @@ public class Partida {
         Objects.requireNonNull(voto, "voto nao pode ser nulo");
 
         if (this.fase != FaseDoJogo.ELEICAO_VOTACAO) {
-            throw new IllegalStateException("fase nao coincide com o que precisamos");
+            throw new AcaoInvalidaException("fase nao coincide com o que precisamos");
         }
 
         this.votacao.registrar(jogadorId, voto);
@@ -305,7 +304,7 @@ public class Partida {
             return eventos;
         }
 
-        if (poder == PoderExecutivo.NENHUM) {
+        if (poder != PoderExecutivo.NENHUM) {
             this.fase = FaseDoJogo.ACAO_EXECUTIVA;
             eventos.add(new PoderExecutivoLiberado(poder, this.presidenteAtualId));
             return eventos;
@@ -345,9 +344,7 @@ public class Partida {
             return evento;
         }
 
-        for (Faccao f : cartasNaMaoDe(jogadorId)) {
-            this.baralho.descartar(f);
-        }
+        List<Faccao> cartasDevolvidas = this.sessaoLegislativa.retirarCartasDescartadasPorVeto();
 
         this.sessaoLegislativa = null;
         evento.addAll(rejeitarGoverno());
@@ -357,7 +354,7 @@ public class Partida {
 
     public List<Faccao> cartasNaMaoDe(UUID jogadorId) {
         if (this.sessaoLegislativa == null) {
-            throw new AcaoInvalidaException("cartas nao chegaram a ser distribuidas ainda");
+            return List.of();
         }
 
         return this.sessaoLegislativa.cartasVisiveisPara(jogadorId);
@@ -397,10 +394,13 @@ public class Partida {
         }
 
         if (this.governoAnteriorEleito != null) {
-            return !this.governoAnteriorEleito.chancelerId().equals(candidatoId) && !this.governoAnteriorEleito.presidenteId().equals(candidatoId);
+
+            if (idsJogadoresVivos().size() > 5 && this.governoAnteriorEleito.presidenteId().equals(candidatoId)) return false;
+
+            return !this.governoAnteriorEleito.chancelerId().equals(candidatoId);
         }
 
-        return idsJogadoresVivos().size() <= 5;
+        return true;
     }
 
     private List<EventoDominio> aprovarGoverno() {
@@ -430,6 +430,7 @@ public class Partida {
             Faccao carta = this.baralho.comprarUma();
             this.tabuleiro.promulgar(carta);
 
+            eventoDominios.add(new EleicaoRejeitada(proximoPresidente(), numEleicoesFracassadas));
             eventoDominios.add(new PoliticaPromulgada(carta, true,
                     this.tabuleiro.liberaisPromulgadas(), this.tabuleiro.fascistasPromulgadas()));
 
@@ -438,14 +439,12 @@ public class Partida {
 
             Optional<FimDeJogo> fimDeJogo = verificarVitoriaPorPoliticas();
             if (fimDeJogo.isPresent()) {
-                eventoDominios.add(new EleicaoRejeitada(proximoPresidente(), numEleicoesFracassadas));
-
                 eventoDominios.add(fimDeJogo.get());
                 return eventoDominios;
             }
         }
 
-        eventoDominios.add(new EleicaoRejeitada(this.presidenteAtualId, numEleicoesFracassadas));
+        eventoDominios.add(new EleicaoRejeitada(proximoPresidente(), numEleicoesFracassadas));
         eventoDominios.addAll(avancarProximaRodada());
         return eventoDominios;
     }
@@ -498,7 +497,6 @@ public class Partida {
             return Optional.empty();
         }
 
-        this.fase = FaseDoJogo.FIM_DE_JOGO;
         MotivoVitoria motivo = (vencedora.get() == Faccao.LIBERAL)
                 ? MotivoVitoria.POLITICAS_LIBERAIS
                 : MotivoVitoria.POLITICAS_FASCISTAS;
