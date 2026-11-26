@@ -360,7 +360,7 @@ public class Partida {
                 this.tabuleiro.vetoDisponivel(), tresCartasCompradas);
         this.fase = FaseDoJogo.SESSAO_LEGISLATIVA_PRESIDENTE;
 
-        eventos.add(new CartasdoPresidente(this.presidenteAtualId, tresCartasCompradas));
+        eventos.add(new CartasDoPresidente(this.presidenteAtualId, tresCartasCompradas));
         return eventos;
     }
 

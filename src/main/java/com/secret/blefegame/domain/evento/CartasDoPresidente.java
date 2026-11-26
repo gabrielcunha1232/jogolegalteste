@@ -6,9 +6,9 @@ import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
-public record CartasdoPresidente(UUID destinatarioId, List<Faccao> cartas) implements EventoPrivado {
+public record CartasDoPresidente(UUID destinatarioId, List<Faccao> cartas) implements EventoPrivado {
 
-    public CartasdoPresidente {
+    public CartasDoPresidente {
         Objects.requireNonNull(destinatarioId, "id nao pode estar nulo");
         Objects.requireNonNull(cartas, "cartas nao podem estar nulas");
 
