@@ -28,6 +28,10 @@ public class Partida {
     private SessaoLegislativa sessaoLegislativa;
     private int eleicoesFracassadasSeguidas;
 
+    private PoderExecutivo poderPendente;
+    private UUID presidenteDaRotacaoId;
+    private Set<UUID> investigados;
+
     public Partida(UUID hostSala, String nomeHost, String codigoSala, RandomGenerator randomGenerator) {
         Objects.requireNonNull(hostSala, "id do host nao pode ser nulo");
         Objects.requireNonNull(nomeHost, "nome do host nao pode ser nulo");
@@ -56,6 +60,10 @@ public class Partida {
         this.votacao = null;
         this.sessaoLegislativa = null;
         this.eleicoesFracassadasSeguidas = 0;
+
+        this.poderPendente = PoderExecutivo.NENHUM;
+        this.presidenteDaRotacaoId = null;
+        this.investigados = new HashSet<>();
 
         inscricoes.add(new Inscricao(hostSala, nomeHost));
         this.hostSala = hostSala;
@@ -100,6 +108,7 @@ public class Partida {
             this.jogadores.add(new Jogador(i.id(), i.nome(), papeis.removeFirst()));
         }
         this.presidenteAtualId = escolherPrimeiroPresidente();
+        this.presidenteDaRotacaoId = this.presidenteAtualId;
         this.fase = FaseDoJogo.DISTRIBUICAO_PAPEIS;
 
         this.baralho = new Baralho(this.randomGenerator);
@@ -212,8 +221,6 @@ public class Partida {
             throw new AcaoInvalidaException("o atual presidente nao é o mesmo do que quer eleger chanceler");
         }
 
-        Jogador jogadorNoTabuleiro = buscarJogador(candidatoId);
-
         if (!candidatoElegivel(candidatoId)) {
             throw new AcaoInvalidaException("candidato nao pode ser eleito chanceler");
         }
@@ -310,6 +317,7 @@ public class Partida {
             return eventos;
         }
 
+        this.poderPendente = poder;
         eventos.addAll(avancarProximaRodada());
         return eventos;
     }
@@ -344,8 +352,7 @@ public class Partida {
             return evento;
         }
 
-        List<Faccao> cartasDevolvidas = this.sessaoLegislativa.retirarCartasDescartadasPorVeto();
-
+        this.sessaoLegislativa.retirarCartasDescartadasPorVeto();
         this.sessaoLegislativa = null;
         evento.addAll(rejeitarGoverno());
 
@@ -376,6 +383,7 @@ public class Partida {
         List<EventoDominio> eventos = new ArrayList<>();
 
         this.presidenteAtualId = proximoPresidente();
+        this.presidenteDaRotacaoId = this.presidenteAtualId;
         this.governoAtual = Governo.iniciarComPresidente(this.presidenteAtualId);
         this.sessaoLegislativa = null;
         this.fase = FaseDoJogo.ELEICAO_NOMEACAO;
@@ -429,16 +437,14 @@ public class Partida {
         if (numEleicoesFracassadas == 3) {
             Faccao carta = this.baralho.comprarUma();
             this.tabuleiro.promulgar(carta);
-
-            eventoDominios.add(new EleicaoRejeitada(proximoPresidente(), numEleicoesFracassadas));
-            eventoDominios.add(new PoliticaPromulgada(carta, true,
-                    this.tabuleiro.liberaisPromulgadas(), this.tabuleiro.fascistasPromulgadas()));
-
             this.eleicoesFracassadasSeguidas = 0;
             this.governoAnteriorEleito = null;
 
             Optional<FimDeJogo> fimDeJogo = verificarVitoriaPorPoliticas();
             if (fimDeJogo.isPresent()) {
+                eventoDominios.add(new EleicaoRejeitada(proximoPresidente(), numEleicoesFracassadas));
+                eventoDominios.add(new PoliticaPromulgada(carta, true,
+                        this.tabuleiro.liberaisPromulgadas(), this.tabuleiro.fascistasPromulgadas()));
                 eventoDominios.add(fimDeJogo.get());
                 return eventoDominios;
             }
@@ -451,7 +457,7 @@ public class Partida {
 
     private UUID proximoPresidente() {
         int total = this.jogadores.size();
-        int jogadorIndice = this.jogadores.indexOf(buscarJogador(this.presidenteAtualId));
+        int jogadorIndice = this.jogadores.indexOf(buscarJogador(this.presidenteDaRotacaoId));
         for (int passo = 1; passo < total; passo++) {
             int proximoIndice = (jogadorIndice + passo) % total;
             Jogador candidato = this.jogadores.get(proximoIndice);
