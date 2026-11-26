@@ -2,6 +2,7 @@ package com.secret.blefegame.domain;
 
 import com.secret.blefegame.domain.evento.*;
 import com.secret.blefegame.domain.excecao.AcaoInvalidaException;
+import jdk.jfr.Event;
 import org.jspecify.annotations.NonNull;
 
 import java.util.*;
@@ -377,6 +378,49 @@ public class Partida {
 
     public int totalInscritos() {
         return this.inscricoes.size();
+    }
+
+    public List<EventoDominio> investigarLealdade(UUID presidenteId, UUID alvoId) {
+        List<EventoDominio> eventos = new ArrayList<>();
+        Objects.requireNonNull(presidenteId, "presidente id nao pode ser nulo");
+        Objects.requireNonNull(alvoId, "alvo id nao pode ser nulo");
+
+        if (presidenteId.equals(alvoId)) {
+            throw new AcaoInvalidaException("alvo nao pode ser igual ao presidente");
+        }
+
+        exigirPoder(PoderExecutivo.INVESTIGAR_LEALDADE, presidenteId);
+        Jogador alvo = buscarJogador(alvoId);
+
+        if (!alvo.estaVivo()) {
+            throw new AcaoInvalidaException("alvo tem que estar vivo");
+        }
+
+        if (this.investigados.contains(alvoId)) {
+            throw new AcaoInvalidaException("alvo ja foi investigado antes");
+        }
+        this.investigados.add(alvoId);
+
+        Faccao faccaoAlvo = alvo.papel().faccao();
+
+        eventos.add(new JogadorInvestigado(presidenteId, alvoId));
+        eventos.add(new LealdadeInvestigada(presidenteId, alvoId, faccaoAlvo));
+        eventos.addAll(concluirAcaoExecutiva());
+        return eventos;
+
+    }
+
+    public List<EventoDominio> convocarEleicaoEspecial(UUID presidenteId, UUID novoPresidente) {
+        List<EventoDominio> eventos = new ArrayList<>();
+        Objects.requireNonNull(presidenteId, "presidente id nao pode ser nulo");
+        Objects.requireNonNull(novoPresidente, "novo presidente nao pode ser nulo");
+
+        if (presidenteId.equals(novoPresidente)) {
+            throw new AcaoInvalidaException("nenhum dos dois podem ser iguais");
+        }
+
+        exigirPoder()
+
     }
 
     private List<EventoDominio> avancarProximaRodada() {
