@@ -2,6 +2,7 @@ package com.secret.blefegame.domain;
 
 import com.secret.blefegame.domain.evento.*;
 import com.secret.blefegame.domain.excecao.AcaoInvalidaException;
+import org.jspecify.annotations.NonNull;
 
 import java.util.*;
 import java.util.random.RandomGenerator;
@@ -258,6 +259,110 @@ public class Partida {
         return eventos;
     }
 
+    public List<EventoDominio> presidenteDescarta(UUID jogadorId, int indice) {
+        List<EventoDominio> eventos = new ArrayList<>();
+        Objects.requireNonNull(jogadorId, "jogadorId nao pode ser nulo");
+
+        if (this.fase != FaseDoJogo.SESSAO_LEGISLATIVA_PRESIDENTE) {
+            throw new AcaoInvalidaException("a fase do jogo deve ser correspondente com o descarte presidente");
+        }
+
+        UUID chancelerAtual = this.governoAtual.chancelerId();
+        Objects.requireNonNull(chancelerAtual, "chanceler ainda nao existe");
+
+        Faccao cartaDescartada = this.sessaoLegislativa.presidenteDescarta(jogadorId, indice);
+        this.baralho.descartar(cartaDescartada);
+
+        this.fase = FaseDoJogo.SESSAO_LEGISLATIVA_CHANCELER;
+        List<Faccao> cartasVisiveis = this.sessaoLegislativa.cartasVisiveisPara(chancelerAtual);
+        eventos.add(new CartasDoChanceler(chancelerAtual, cartasVisiveis));
+
+        return eventos;
+    }
+
+    public List<EventoDominio> chancelerPromulga (UUID chancelerId, int indice) {
+        List<EventoDominio> eventos = new ArrayList<>();
+        Objects.requireNonNull(chancelerId, "chancelerId nao pode ser nulo");
+
+        if (this.fase != FaseDoJogo.SESSAO_LEGISLATIVA_CHANCELER) {
+            throw new AcaoInvalidaException("Fase do jogo não coincide com o que é necessário");
+        }
+
+        ResultadoPromulgacao promulgado = this.sessaoLegislativa.chancelerPromulga(chancelerId, indice);
+        this.baralho.descartar(promulgado.descartada());
+
+        PoderExecutivo poder = this.tabuleiro.promulgar(promulgado.promulgada());
+        eventos.add(new PoliticaPromulgada(promulgado.promulgada(), false,
+                this.tabuleiro.liberaisPromulgadas(), this.tabuleiro.fascistasPromulgadas()));
+
+        this.sessaoLegislativa = null;
+
+        Optional<FimDeJogo> fimDeJogo = verificarVitoriaPorPoliticas();
+
+        if (fimDeJogo.isPresent()) {
+            this.fase = FaseDoJogo.FIM_DE_JOGO;
+            eventos.add(fimDeJogo.get());
+            return eventos;
+        }
+
+        if (poder == PoderExecutivo.NENHUM) {
+            this.fase = FaseDoJogo.ACAO_EXECUTIVA;
+            eventos.add(new PoderExecutivoLiberado(poder, this.presidenteAtualId));
+            return eventos;
+        }
+
+        eventos.addAll(avancarProximaRodada());
+        return eventos;
+    }
+
+    public List<EventoDominio> chancelerPropoeVeto(UUID jogadorId) {
+        Objects.requireNonNull(jogadorId, "jogadorId nao pode ser nulo");
+
+        if (this.fase != FaseDoJogo.SESSAO_LEGISLATIVA_CHANCELER) {
+            throw new AcaoInvalidaException("fase do jogo nao coincide com sua etapa atual");
+        }
+
+        this.sessaoLegislativa.chancelerPropoeVeto(jogadorId);
+        this.fase = FaseDoJogo.DECISAO_VETO_PRESIDENTE;
+
+        return List.of(new VetoProposto(jogadorId));
+    }
+
+    public List<EventoDominio> presidenteDecideVeto(UUID jogadorId, boolean aceitar) {
+        List<EventoDominio> evento = new ArrayList<>();
+        Objects.requireNonNull(jogadorId, "jogador id nao pode ser nulo");
+
+        if (this.fase != FaseDoJogo.DECISAO_VETO_PRESIDENTE) {
+            throw new AcaoInvalidaException("fase do jogo nao coincide com sua etapa atual");
+        }
+
+        boolean vetado = this.sessaoLegislativa.presidenteDecideVeto(jogadorId, aceitar);
+
+        evento.add(new VetoDecidido(jogadorId, vetado));
+
+        if (!vetado) {
+            this.fase = FaseDoJogo.SESSAO_LEGISLATIVA_CHANCELER;
+            return evento;
+        }
+
+        for (Faccao f : cartasNaMaoDe(jogadorId)) {
+            this.baralho.descartar(f);
+        }
+
+        this.sessaoLegislativa = null;
+        evento.addAll(rejeitarGoverno());
+
+        return evento;
+    }
+
+    public List<Faccao> cartasNaMaoDe(UUID jogadorId) {
+        if (this.sessaoLegislativa == null) {
+            throw new AcaoInvalidaException("cartas nao chegaram a ser distribuidas ainda");
+        }
+
+        return this.sessaoLegislativa.cartasVisiveisPara(jogadorId);
+    }
+
     public FaseDoJogo fase() {
         return this.fase;
     }
@@ -268,6 +373,18 @@ public class Partida {
 
     public int totalInscritos() {
         return this.inscricoes.size();
+    }
+
+    private List<EventoDominio> avancarProximaRodada() {
+        List<EventoDominio> eventos = new ArrayList<>();
+
+        this.presidenteAtualId = proximoPresidente();
+        this.governoAtual = Governo.iniciarComPresidente(this.presidenteAtualId);
+        this.sessaoLegislativa = null;
+        this.fase = FaseDoJogo.ELEICAO_NOMEACAO;
+
+        eventos.add(new NovoPresidente(this.presidenteAtualId));
+        return eventos;
     }
 
     private boolean candidatoElegivel(UUID candidatoId) {
@@ -313,27 +430,23 @@ public class Partida {
             Faccao carta = this.baralho.comprarUma();
             this.tabuleiro.promulgar(carta);
 
+            eventoDominios.add(new PoliticaPromulgada(carta, true,
+                    this.tabuleiro.liberaisPromulgadas(), this.tabuleiro.fascistasPromulgadas()));
+
             this.eleicoesFracassadasSeguidas = 0;
             this.governoAnteriorEleito = null;
 
-            Optional<Faccao> vencedora = tabuleiro.vitoriaPorPoliticas();
-            if (vencedora.isPresent()) {
-                this.fase = FaseDoJogo.FIM_DE_JOGO;
-                MotivoVitoria motivoVitoria = (vencedora.get() == Faccao.LIBERAL)
-                        ? MotivoVitoria.POLITICAS_LIBERAIS
-                        : MotivoVitoria.POLITICAS_FASCISTAS;
-
+            Optional<FimDeJogo> fimDeJogo = verificarVitoriaPorPoliticas();
+            if (fimDeJogo.isPresent()) {
                 eventoDominios.add(new EleicaoRejeitada(proximoPresidente(), numEleicoesFracassadas));
-                eventoDominios.add(new FimDeJogo(vencedora.get(), motivoVitoria));
+
+                eventoDominios.add(fimDeJogo.get());
                 return eventoDominios;
             }
         }
 
-        this.presidenteAtualId = proximoPresidente();
-
-        this.governoAtual = Governo.iniciarComPresidente(this.presidenteAtualId);
-        this.fase = FaseDoJogo.ELEICAO_NOMEACAO;
         eventoDominios.add(new EleicaoRejeitada(this.presidenteAtualId, numEleicoesFracassadas));
+        eventoDominios.addAll(avancarProximaRodada());
         return eventoDominios;
     }
 
@@ -378,4 +491,19 @@ public class Partida {
                 .toList()
         );
     }
+
+    private Optional<FimDeJogo> verificarVitoriaPorPoliticas() {
+        Optional<Faccao> vencedora = this.tabuleiro.vitoriaPorPoliticas();
+        if (vencedora.isEmpty()) {
+            return Optional.empty();
+        }
+
+        this.fase = FaseDoJogo.FIM_DE_JOGO;
+        MotivoVitoria motivo = (vencedora.get() == Faccao.LIBERAL)
+                ? MotivoVitoria.POLITICAS_LIBERAIS
+                : MotivoVitoria.POLITICAS_FASCISTAS;
+
+        return Optional.of(new FimDeJogo(vencedora.get(), motivo));
+    }
+
 }
