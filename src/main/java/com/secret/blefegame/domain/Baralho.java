@@ -1,15 +1,14 @@
 package com.secret.blefegame.domain;
 
 import java.util.*;
-import java.util.random.RandomGenerator;
 
 public class Baralho {
 
     private final Deque<Faccao> compra;
     private final List<Faccao> descarte;
-    private final RandomGenerator randomGenerator;
+    private final Random randomGenerator;
 
-    Baralho(RandomGenerator random) {
+    Baralho(Random random) {
         Objects.requireNonNull(random, "gerador nao pode ser vazio");
 
 
