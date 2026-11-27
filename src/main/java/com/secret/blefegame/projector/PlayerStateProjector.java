@@ -1,51 +1,67 @@
 package com.secret.blefegame.projector;
 
+import com.secret.blefegame.domain.Faccao;
 import com.secret.blefegame.domain.Partida;
+import com.secret.blefegame.domain.VisaoPartida;
 import com.secret.blefegame.projector.dto.EstadoJogadorDTO;
+import com.secret.blefegame.projector.dto.JogadorDTO;
 import org.springframework.stereotype.Component;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Objects;
-import java.util.UUID;
+import java.util.*;
 
-// O lado "Query" do CQRS: lê a partida e produz o que cada jogador pode ver. Nunca altera nada.
-//
-// Decisão de design já embutida (pergunta 3 do guia): o projector NÃO lê a Partida direto.
-// Ele pede à Partida uma VisaoPartida (partida.visaoPara(id)), que é montada DENTRO do domínio,
-// onde o segredo mora. Assim o filtro do que cada um pode ver fica no domínio, o projector só traduz
-// para DTO, e nenhum getter de papel precisa ficar público.
-// Alternativa: colocar o projector no pacote domain e deixá-lo ler direto. Escolha uma e escreva um teste de vazamento.
 @Component
 public class PlayerStateProjector {
 
     public EstadoJogadorDTO projetar(Partida partida, UUID jogadorId) {
-        // validar que partida e jogadorId não são nulos
         Objects.requireNonNull(partida, "partida nao pode estar nula");
         Objects.requireNonNull(jogadorId, "jogador id nao pode estar nulo");
 
-        // pedir a visão desse jogador: partida.visaoPara(jogadorId)
+        VisaoPartida visao = partida.visaoPara(jogadorId);
 
-        // converter cada JogadorVisao em JogadorDTO
-        // e a VisaoPartida em EstadoJogadorDTO (enums viram String com name())
-        // as cartas (Faccao) viram lista de String
+        List<JogadorDTO> jogadoresDTO = visao.jogadores().stream()
+                .map(j -> new JogadorDTO(j.id(), j.nome(), j.vivo(),
+                        j.id().equals(visao.presidenteId()), j.id().equals(visao.chancelerId()),
+                        j.jaVotou()))
+                .toList();
 
-        // retornar o DTO
-        throw new UnsupportedOperationException("implementar projetar");
+        List<String> minhasCartasDTO = visao.minhasCartas().stream()
+                .map(Enum::name)
+                .toList();
+
+        String minhaFaccaoDTO = visao.minhaFaccao() == null
+                ? null
+                : visao.minhaFaccao().name();
+
+
+        return new EstadoJogadorDTO(
+                jogadorId,
+                visao.codigoSala(),
+                visao.fase().name(),
+                visao.anfitriaoId(),
+                jogadoresDTO,
+                visao.presidenteId(),
+                visao.chancelerId(),
+                visao.liberaisPromulgadas(),
+                visao.fascistasPromulgadas(),
+                visao.eleicoesFracassadas(),
+                visao.poderPendente().name(),
+                visao.vetoDisponivel(),
+                minhaFaccaoDTO,
+                visao.souHitler(),
+                visao.aliadosVisiveis(),
+                minhasCartasDTO
+        );
     }
 
     public Map<UUID, EstadoJogadorDTO> projetarParaTodos(Partida partida) {
         Map<UUID, EstadoJogadorDTO> map = new HashMap<>();
-        // validar que partida não é nula
         Objects.requireNonNull(partida, "partida nao pode estar nula");
 
-        // para cada id em partida.idsParticipantes(), chamar projetar(partida, id)
         for (UUID id : partida.idsParticipantes()) {
             EstadoJogadorDTO dtoJogador = projetar(partida, id);
             map.putIfAbsent(id, dtoJogador);
         }
 
-        // retornar um mapa imutável id -> DTO
         return map;
     }
 }
