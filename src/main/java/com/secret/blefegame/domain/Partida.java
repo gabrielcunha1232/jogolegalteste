@@ -2,8 +2,6 @@ package com.secret.blefegame.domain;
 
 import com.secret.blefegame.domain.evento.*;
 import com.secret.blefegame.domain.excecao.AcaoInvalidaException;
-import jdk.jfr.Event;
-import org.jspecify.annotations.NonNull;
 
 import java.util.*;
 import java.util.random.RandomGenerator;
@@ -14,7 +12,7 @@ public class Partida {
     private static final int MAXIMO_JOGADORES = 10;
 
     private final String codigoSala;
-    private final RandomGenerator randomGenerator;
+    private final Random randomGenerator;
     private final List<Inscricao> inscricoes;
     private final List<Jogador> jogadores;
     private FaseDoJogo fase;
@@ -33,7 +31,7 @@ public class Partida {
     private UUID presidenteDaRotacaoId;
     private Set<UUID> investigados;
 
-    public Partida(UUID hostSala, String nomeHost, String codigoSala, RandomGenerator randomGenerator) {
+    public Partida(UUID hostSala, String nomeHost, String codigoSala, Random randomGenerator) {
         Objects.requireNonNull(hostSala, "id do host nao pode ser nulo");
         Objects.requireNonNull(nomeHost, "nome do host nao pode ser nulo");
         if (nomeHost.isBlank()) {
@@ -305,20 +303,19 @@ public class Partida {
         this.sessaoLegislativa = null;
 
         Optional<FimDeJogo> fimDeJogo = verificarVitoriaPorPoliticas();
-
         if (fimDeJogo.isPresent()) {
             this.fase = FaseDoJogo.FIM_DE_JOGO;
             eventos.add(fimDeJogo.get());
             return eventos;
         }
 
+        this.poderPendente = poder;
         if (poder != PoderExecutivo.NENHUM) {
             this.fase = FaseDoJogo.ACAO_EXECUTIVA;
             eventos.add(new PoderExecutivoLiberado(poder, this.presidenteAtualId));
             return eventos;
         }
 
-        this.poderPendente = poder;
         eventos.addAll(avancarProximaRodada());
         return eventos;
     }
@@ -353,7 +350,11 @@ public class Partida {
             return evento;
         }
 
-        this.sessaoLegislativa.retirarCartasDescartadasPorVeto();
+        List<Faccao> cartasDeDescarte = this.sessaoLegislativa.retirarCartasDescartadasPorVeto();
+        for (Faccao f : cartasDeDescarte) {
+            this.baralho.descartar(f);
+        }
+
         this.sessaoLegislativa = null;
         evento.addAll(rejeitarGoverno());
 
@@ -559,23 +560,25 @@ public class Partida {
         this.eleicoesFracassadasSeguidas++;
         int numEleicoesFracassadas = this.eleicoesFracassadasSeguidas;
 
+        eventoDominios.add(new EleicaoRejeitada(proximoPresidente(), numEleicoesFracassadas));
+
         if (numEleicoesFracassadas == 3) {
             Faccao carta = this.baralho.comprarUma();
             this.tabuleiro.promulgar(carta);
             this.eleicoesFracassadasSeguidas = 0;
             this.governoAnteriorEleito = null;
 
+            eventoDominios.add(new PoliticaPromulgada(carta, true,
+                    this.tabuleiro.liberaisPromulgadas(), this.tabuleiro.fascistasPromulgadas()));
+
             Optional<FimDeJogo> fimDeJogo = verificarVitoriaPorPoliticas();
             if (fimDeJogo.isPresent()) {
-                eventoDominios.add(new EleicaoRejeitada(proximoPresidente(), numEleicoesFracassadas));
-                eventoDominios.add(new PoliticaPromulgada(carta, true,
-                        this.tabuleiro.liberaisPromulgadas(), this.tabuleiro.fascistasPromulgadas()));
+                this.fase = FaseDoJogo.FIM_DE_JOGO;
                 eventoDominios.add(fimDeJogo.get());
                 return eventoDominios;
             }
         }
 
-        eventoDominios.add(new EleicaoRejeitada(proximoPresidente(), numEleicoesFracassadas));
         eventoDominios.addAll(avancarProximaRodada());
         return eventoDominios;
     }

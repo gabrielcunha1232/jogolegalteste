@@ -1,5 +1,7 @@
 package com.secret.blefegame.domain;
 
+import com.secret.blefegame.domain.excecao.AcaoInvalidaException;
+
 import java.util.Objects;
 import java.util.UUID;
 
@@ -34,7 +36,7 @@ public class Jogador {
 
     void executar() {
         if (!this.vivo) {
-            throw new IllegalStateException("jogador ja esta morto");
+            throw new AcaoInvalidaException("jogador ja esta morto");
         }
 
         this.vivo = false;
