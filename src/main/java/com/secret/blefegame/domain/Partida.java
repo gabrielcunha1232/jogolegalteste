@@ -186,23 +186,15 @@ public class Partida {
 
     private List<EventoDominio> montarEventosDePapeis() {
         List<EventoDominio> eventos = new ArrayList<>();
-        int totalJogadores = this.jogadores.size();
         for (Jogador j : this.jogadores) {
-            Papel papel = j.papel();
-            List<UUID> enxergados = List.of();
+            Set<UUID> aliados = aliadosVisiveisDe(j);
 
-            if (papel.enxergarDuranteDistribuicao(totalJogadores)) {
-                enxergados = this.jogadores.stream()
-                        .filter(outro -> !outro.equals(j))
-                        .filter(outro -> outro.papel().ehFacista())
-                        .map(Jogador::id)
-                        .toList();
-            }
-
-            EventoDominio eventoDominio = new PapelDistribuido(j.id(), papel.faccao(), papel.ehHitler(), enxergados);
+            EventoDominio eventoDominio = new PapelDistribuido(j.id(), j.papel().faccao(),
+                    j.papel().ehHitler(), new ArrayList<>(aliados));
 
             eventos.add(eventoDominio);
         }
+
         return eventos;
     }
 
@@ -496,8 +488,76 @@ public class Partida {
         return this.jogadores.stream().map(Jogador::id).collect(Collectors.toUnmodifiableSet());
     }
 
-    public VisaoPartida visapPara(UUID jogadorId) {
+    public VisaoPartida visaoPara(UUID jogadorId) {
         Objects.requireNonNull(jogadorId, "jogador id nao pode ser nulo");
+
+        if (!idsParticipantes().contains(jogadorId)) {
+            throw new AcaoInvalidaException("jogador nao esta no lobby");
+        }
+
+        List<JogadorVisao> jogadoresVisoes;
+
+        if (this.fase == FaseDoJogo.AGUARDANDO_JOGADORES) {
+            jogadoresVisoes = this.inscricoes.stream()
+                    .map(i -> new JogadorVisao(i.id(), i.nome(), true, false))
+                    .toList();
+        } else {
+            Set<UUID> idsQueVotaram = this.votacao == null
+                    ? Set.of()
+                    : this.votacao.jogadoresQueJaVotaram();
+
+            jogadoresVisoes = this.jogadores.stream()
+                    .map(j -> new JogadorVisao(j.id(), j.nome(),
+                            j.estaVivo(), idsQueVotaram.contains(j.id())))
+                    .toList();
+        }
+
+        int liberaisPromulgadas = this.tabuleiro == null
+                ? 0
+                : this.tabuleiro.liberaisPromulgadas();
+
+        int fascistasPromulgadas = this.tabuleiro == null
+                ? 0
+                : this.tabuleiro.fascistasPromulgadas();
+
+        boolean vetoDisponivel = this.tabuleiro != null
+                && this.tabuleiro.vetoDisponivel();
+
+        UUID chancelerId = this.governoAtual == null
+                ? null
+                : this.governoAtual.chancelerId();
+
+        Faccao minhaFaccao = null;
+        boolean ehHitler = false;
+        Set<UUID> aliadosVisiveis = Set.of();
+        List<Faccao> minhasCartas = List.of();
+
+        if (this.fase != FaseDoJogo.AGUARDANDO_JOGADORES) {
+            Jogador jogador = buscarJogador(jogadorId);
+
+            minhaFaccao = jogador.papel().faccao();
+            ehHitler = jogador.papel().ehHitler();
+            aliadosVisiveis = aliadosVisiveisDe(jogador);
+            minhasCartas = cartasNaMaoDe(jogadorId);
+        }
+
+        return new VisaoPartida(
+                this.codigoSala,
+                this.fase,
+                this.hostSala,
+                jogadoresVisoes,
+                this.presidenteAtualId,
+                chancelerId,
+                liberaisPromulgadas,
+                fascistasPromulgadas,
+                this.eleicoesFracassadasSeguidas,
+                this.poderPendente,
+                vetoDisponivel,
+                minhaFaccao,
+                ehHitler,
+                aliadosVisiveis,
+                minhasCartas
+        );
     }
 
     private void exigirPoder(PoderExecutivo poderExecutivo, UUID jogadorId) {
@@ -650,5 +710,18 @@ public class Partida {
                 : MotivoVitoria.POLITICAS_FASCISTAS;
 
         return Optional.of(new FimDeJogo(vencedora.get(), motivo));
+    }
+
+    private Set<UUID> aliadosVisiveisDe(Jogador jogador) {
+        int totalJogadores = this.jogadores.size();
+        if (!jogador.papel().enxergarDuranteDistribuicao(totalJogadores)) {
+            return Set.of();
+        }
+
+        return this.jogadores.stream()
+                .filter(outro -> !outro.equals(jogador))
+                .filter(outro -> outro.papel().ehFacista())
+                .map(Jogador::id)
+                .collect(Collectors.toUnmodifiableSet());
     }
 }

@@ -51,7 +51,13 @@ public class Votacao {
         return Map.copyOf(this.votosRegistrados);
     }
 
+    public Set<UUID> jogadoresQueJaVotaram() {
+        return Set.copyOf(this.votosRegistrados.keySet());
+    }
+
     public int totalVotosComputados() {
         return this.votosRegistrados.size();
     }
+
+    public int totalVotosEsperados() {return this.votantesEsperados.size();}
 }
