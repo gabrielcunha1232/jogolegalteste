@@ -410,17 +410,98 @@ public class Partida {
 
     }
 
-    public List<EventoDominio> convocarEleicaoEspecial(UUID presidenteId, UUID novoPresidente) {
+    public List<EventoDominio> convocarEleicaoEspecial(UUID presidenteId, UUID novoPresidenteId) {
         List<EventoDominio> eventos = new ArrayList<>();
         Objects.requireNonNull(presidenteId, "presidente id nao pode ser nulo");
-        Objects.requireNonNull(novoPresidente, "novo presidente nao pode ser nulo");
+        Objects.requireNonNull(novoPresidenteId, "novo presidente nao pode ser nulo");
 
-        if (presidenteId.equals(novoPresidente)) {
+        if (presidenteId.equals(novoPresidenteId)) {
             throw new AcaoInvalidaException("nenhum dos dois podem ser iguais");
         }
 
-        exigirPoder()
+        exigirPoder(PoderExecutivo.ELEICAO_ESPECIAL, presidenteId);
 
+        Jogador presidenteNovo = buscarJogador(novoPresidenteId);
+        if (!presidenteNovo.estaVivo()) {
+            throw new AcaoInvalidaException("o novo presidente deve estar vivo");
+        }
+
+        this.presidenteAtualId = novoPresidenteId;
+        this.governoAtual = Governo.iniciarComPresidente(novoPresidenteId);
+        this.poderPendente = PoderExecutivo.NENHUM;
+        this.fase = FaseDoJogo.ELEICAO_NOMEACAO;
+
+        eventos.add(new EleicaoEspecialConvocada(presidenteId, novoPresidenteId));
+
+        return eventos;
+    }
+
+    public List<EventoDominio> espiarBaralho(UUID presidenteId) {
+        List<EventoDominio> eventos = new ArrayList<>();
+        Objects.requireNonNull(presidenteId, "presidente id nao pode ser nulo");
+
+        exigirPoder(PoderExecutivo.ESPIAR_BARALHO, presidenteId);
+
+        List<Faccao> tresCartasSuperiorBaralho = this.baralho.espiarTres();
+
+        eventos.add(new BaralhoEspiado(presidenteId));
+        eventos.add(new CartasEspiadas(presidenteId, tresCartasSuperiorBaralho));
+        eventos.addAll(concluirAcaoExecutiva());
+
+        return eventos;
+    }
+
+    public List<EventoDominio> executar(UUID presidenteId, UUID alvoId) {
+        List<EventoDominio> eventos = new ArrayList<>();
+        Objects.requireNonNull(presidenteId, "presidente id nao pode ser nulo");
+        Objects.requireNonNull(alvoId, "alvo id nao pode ser nulo");
+
+        if (presidenteId.equals(alvoId)) {
+            throw new AcaoInvalidaException("os dois nao podem ser iguais");
+        }
+
+        exigirPoder(PoderExecutivo.EXECUCAO, presidenteId);
+
+        Jogador alvo = buscarJogador(alvoId);
+        alvo.executar();
+
+        eventos.add(new JogadorExecutado(presidenteId, alvoId));
+
+        if (alvo.papel().ehHitler()) {
+            this.fase = FaseDoJogo.FIM_DE_JOGO;
+            eventos.add(new FimDeJogo(Faccao.LIBERAL, MotivoVitoria.HITLER_EXECUTADO));
+            return eventos;
+        }
+
+        eventos.addAll(concluirAcaoExecutiva());
+        return eventos;
+    }
+
+    public PoderExecutivo poderPendente() {
+        if (this.poderPendente == null) {
+            this.poderPendente = PoderExecutivo.NENHUM;
+        }
+
+        return this.poderPendente;
+    }
+
+    private void exigirPoder(PoderExecutivo poderExecutivo, UUID jogadorId) {
+        if (this.fase != FaseDoJogo.ACAO_EXECUTIVA) {
+            throw new AcaoInvalidaException("a fase deve condizir com a etapa para poder");
+        }
+
+        if (this.poderPendente != poderExecutivo) {
+            throw new AcaoInvalidaException("poder executivo nao é o atual");
+        }
+
+        if (!this.presidenteAtualId.equals(jogadorId)) {
+            throw new AcaoInvalidaException("o jogador referenciado nao é o atual presidente da rodada");
+        }
+    }
+
+    private List<EventoDominio> concluirAcaoExecutiva() {
+        this.poderPendente = PoderExecutivo.NENHUM;
+        return avancarProximaRodada();
     }
 
     private List<EventoDominio> avancarProximaRodada() {
