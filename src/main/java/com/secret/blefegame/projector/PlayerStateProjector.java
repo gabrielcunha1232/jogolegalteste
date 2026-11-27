@@ -4,7 +4,9 @@ import com.secret.blefegame.domain.Partida;
 import com.secret.blefegame.projector.dto.EstadoJogadorDTO;
 import org.springframework.stereotype.Component;
 
+import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 // O lado "Query" do CQRS: lê a partida e produz o que cada jogador pode ver. Nunca altera nada.
@@ -19,6 +21,8 @@ public class PlayerStateProjector {
 
     public EstadoJogadorDTO projetar(Partida partida, UUID jogadorId) {
         // validar que partida e jogadorId não são nulos
+        Objects.requireNonNull(partida, "partida nao pode estar nula");
+        Objects.requireNonNull(jogadorId, "jogador id nao pode estar nulo");
 
         // pedir a visão desse jogador: partida.visaoPara(jogadorId)
 
@@ -31,11 +35,17 @@ public class PlayerStateProjector {
     }
 
     public Map<UUID, EstadoJogadorDTO> projetarParaTodos(Partida partida) {
+        Map<UUID, EstadoJogadorDTO> map = new HashMap<>();
         // validar que partida não é nula
+        Objects.requireNonNull(partida, "partida nao pode estar nula");
 
         // para cada id em partida.idsParticipantes(), chamar projetar(partida, id)
+        for (UUID id : partida.idsParticipantes()) {
+            EstadoJogadorDTO dtoJogador = projetar(partida, id);
+            map.putIfAbsent(id, dtoJogador);
+        }
 
         // retornar um mapa imutável id -> DTO
-        throw new UnsupportedOperationException("implementar projetarParaTodos");
+        return map;
     }
 }

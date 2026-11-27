@@ -4,6 +4,7 @@ import com.secret.blefegame.domain.evento.*;
 import com.secret.blefegame.domain.excecao.AcaoInvalidaException;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 public class Partida {
 
@@ -485,6 +486,20 @@ public class Partida {
         return this.poderPendente;
     }
 
+    public Set<UUID> idsParticipantes() {
+        if (this.fase == FaseDoJogo.AGUARDANDO_JOGADORES) {
+            return this.inscricoes.stream()
+                    .map(Inscricao::id)
+                    .collect(Collectors.toUnmodifiableSet());
+        }
+
+        return this.jogadores.stream().map(Jogador::id).collect(Collectors.toUnmodifiableSet());
+    }
+
+    public VisaoPartida visapPara(UUID jogadorId) {
+        Objects.requireNonNull(jogadorId, "jogador id nao pode ser nulo");
+    }
+
     private void exigirPoder(PoderExecutivo poderExecutivo, UUID jogadorId) {
         if (this.fase != FaseDoJogo.ACAO_EXECUTIVA) {
             throw new AcaoInvalidaException("a fase deve condizir com a etapa para poder");
@@ -636,5 +651,4 @@ public class Partida {
 
         return Optional.of(new FimDeJogo(vencedora.get(), motivo));
     }
-
 }
