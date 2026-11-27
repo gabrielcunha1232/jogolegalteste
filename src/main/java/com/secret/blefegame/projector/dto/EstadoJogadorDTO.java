@@ -1,12 +1,11 @@
 package com.secret.blefegame.projector.dto;
 
+
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
-// O estado completo da partida PARA UM jogador específico: parte pública da mesa + o que só ele pode saber.
-// Usa tipos simples (String) para fase/facção/poder: o contrato com o cliente não deve depender de enums do domínio.
-// Este DTO substitui o EstadoPublicoDTO do guia: a parte pública já está aqui, e o log da mesa vem pelos eventos.
 public record EstadoJogadorDTO(
         UUID meuId,
         String codigoSala,
@@ -27,10 +26,22 @@ public record EstadoJogadorDTO(
         List<String> minhasCartas) {
 
     public EstadoJogadorDTO {
-        // meuId, codigoSala, fase, jogadores, aliadosVisiveis e minhasCartas não podem ser nulos
+        Objects.requireNonNull(meuId, "meu id nao pode ser nulo");
+        Objects.requireNonNull(codigoSala, "codigo sala nao pode ser nulo");
+        Objects.requireNonNull(fase, "fase nao pode ser nula");
+        Objects.requireNonNull(jogadores, "jogadores nao pode estar nulo");
+        Objects.requireNonNull(aliadosVisiveis, "aliados nao podem estar nulo");
+        Objects.requireNonNull(minhasCartas, "minhas cartas nao podem estar nulas");
 
         // guarde cópias imutáveis das listas e do conjunto
+        jogadores = List.copyOf(jogadores);
+        aliadosVisiveis = Set.copyOf(aliadosVisiveis);
+        minhasCartas = List.copyOf(minhasCartas);
 
         // minhaFaccao pode ser nula (no lobby ainda não há papéis); fora do lobby, não deveria ser
+
+        if (!fase.equals("AGUARDANDO_JOGADORES")) {
+            Objects.requireNonNull(minhaFaccao, "faccao nao pode ser nula quando o jogo ja iniciou");
+        }
     }
 }
