@@ -33,12 +33,9 @@ public record EstadoJogadorDTO(
         Objects.requireNonNull(aliadosVisiveis, "aliados nao podem estar nulo");
         Objects.requireNonNull(minhasCartas, "minhas cartas nao podem estar nulas");
 
-        // guarde cópias imutáveis das listas e do conjunto
         jogadores = List.copyOf(jogadores);
         aliadosVisiveis = Set.copyOf(aliadosVisiveis);
         minhasCartas = List.copyOf(minhasCartas);
-
-        // minhaFaccao pode ser nula (no lobby ainda não há papéis); fora do lobby, não deveria ser
 
         if (!fase.equals("AGUARDANDO_JOGADORES")) {
             Objects.requireNonNull(minhaFaccao, "faccao nao pode ser nula quando o jogo ja iniciou");
