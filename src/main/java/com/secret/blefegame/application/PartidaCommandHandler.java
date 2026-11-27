@@ -1,13 +1,15 @@
 package com.secret.blefegame.application;
 
 import com.secret.blefegame.application.command.Comando;
+import com.secret.blefegame.application.excecao.SalaNaoEncontradaException;
+import com.secret.blefegame.domain.Inscricao;
 import com.secret.blefegame.domain.Partida;
 import com.secret.blefegame.domain.evento.EventoDominio;
 import com.secret.blefegame.projector.PlayerStateProjector;
+import com.secret.blefegame.projector.dto.EstadoJogadorDTO;
 import org.springframework.stereotype.Service;
 
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -27,58 +29,59 @@ public class PartidaCommandHandler {
     private final Map<String, ReentrantLock> locksPorSala = new ConcurrentHashMap<>();
 
     public PartidaCommandHandler(PartidaRepository repository, EventPublisher publisher, PlayerStateProjector projector) {
-        // atribuir os três campos (validar que nenhum é nulo)
-        throw new UnsupportedOperationException("implementar construtor");
+        this.repository = Objects.requireNonNull(repository, "repositorio nao pode ser nulo");
+        this.publisher = Objects.requireNonNull(publisher, "publisher nao pode ser nulo");
+        this.projector = Objects.requireNonNull(projector, "projector nao pode ser nulo");
     }
 
     public ResultadoComando tratar(Comando comando) {
-        // validar que o comando não é nulo
+        Objects.requireNonNull(comando, "comando nao é nulo");
 
-        // buscar a partida no repositório; se não existir, lançar SalaNaoEncontradaException
+        Partida partida = this.repository.buscar(comando.codigoSala())
+                .orElseThrow(() -> new SalaNaoEncontradaException("sala nao encontrada"));
 
-        // obter o lock da sala (obterLock) e travar
+        ReentrantLock lock = obterLock(comando.codigoSala());
+        ResultadoComando resultado;
+        lock.lock();
 
-        // dentro de try/finally (o unlock vai no finally, sempre):
-        //   - executar o comando na partida: executar(partida, comando)  -> lista de eventos
-        //   - tirar a foto do estado de TODOS os jogadores: projector.projetarParaTodos(partida)
-        //     (isso precisa acontecer DENTRO do lock, porque a Partida muda)
-        //   - se o comando foi tratado com sucesso, salvar a partida no repositório
-        //   - montar o ResultadoComando com código da sala, eventos e estados
+        try {
+            List<EventoDominio> eventos = executar(partida, comando);
+            Map<UUID, EstadoJogadorDTO> estados = this.projector.projetarParaTodos(partida);
 
-        // depois do finally (lock já solto): publisher.publicar(resultado)
-        // e se a publicação lançar exceção? registre o erro e NÃO relance: a ação já aconteceu
+            this.repository.salvar(partida);
 
-        // retornar o resultado
+            resultado = new ResultadoComando(comando.codigoSala(), eventos, estados);
+        } finally {
+            lock.unlock();
+        }
 
-        // sobre exceções do domínio: AcaoInvalidaException NÃO deve ser capturada aqui.
-        // Deixe subir: a infra a transforma em mensagem para /user/queue/erros, só para quem errou.
-        // Se a ação lança no meio, o lock ainda é solto (finally) e nada é publicado.
-        throw new UnsupportedOperationException("implementar tratar");
+        try {
+            this.publisher.publicar(resultado);
+        } catch (RuntimeException e) {
+
+        }
+
+        return resultado;
     }
 
     private List<EventoDominio> executar(Partida partida, Comando comando) {
-        // switch por padrão sobre o tipo do comando (sem default: o compilador garante que todos foram tratados)
-        // para cada caso, chamar o método correspondente da Partida usando comando.jogadorId() como ator:
-        //   Entrar               -> partida.entrar(new Inscricao(jogadorId, nome))
-        //   Iniciar              -> partida.iniciar(jogadorId)
-        //   NomearChanceler      -> partida.nomearChanceler(jogadorId, candidatoId)
-        //   Votar                -> partida.votar(jogadorId, voto)
-        //   PresidenteDescarta   -> partida.presidenteDescarta(jogadorId, indice)
-        //   ChancelerPromulga    -> partida.chancelerPromulga(jogadorId, indice)
-        //   ChancelerPropoeVeto  -> partida.chancelerPropoeVeto(jogadorId)
-        //   PresidenteDecideVeto -> partida.presidenteDecideVeto(jogadorId, aceitar)
-        //   InvestigarLealdade   -> partida.investigarLealdade(jogadorId, alvoId)
-        //   ConvocarEleicaoEspecial -> partida.convocarEleicaoEspecial(jogadorId, novoPresidenteId)
-        //   EspiarBaralho        -> partida.espiarBaralho(jogadorId)
-        //   Executar             -> partida.executar(jogadorId, alvoId)
-        throw new UnsupportedOperationException("implementar executar");
+        return switch (comando) {
+            case Comando.Entrar c -> partida.entrar(new Inscricao(c.jogadorId(), c.nome()));
+            case Comando.Iniciar c -> partida.iniciar(c.jogadorId());
+            case Comando.NomearChanceler c -> partida.nomearChanceler(c.jogadorId(), c.candidatoId());
+            case Comando.Votar c -> partida.votar(c.jogadorId(), c.voto());
+            case Comando.PresidenteDescarta c -> partida.presidenteDescarta(c.jogadorId(), c.indice());
+            case Comando.ChancelerPromulga c -> partida.chancelerPromulga(c.jogadorId(), c.indice());
+            case Comando.ChancelerPropoeVeto c -> partida.chancelerPropoeVeto(c.jogadorId());
+            case Comando.PresidenteDecideVeto c -> partida.presidenteDecideVeto(c.jogadorId(), c.aceitar());
+            case Comando.InvestigarLealdade c -> partida.investigarLealdade(c.jogadorId(), c.alvoId());
+            case Comando.ConvocarEleicaoEspecial c -> partida.convocarEleicaoEspecial(c.jogadorId(), c.novoPresidenteId());
+            case Comando.EspiarBaralho c -> partida.espiarBaralho(c.jogadorId());
+            case Comando.Executar c -> partida.executar(c.jogadorId(), c.alvoId());
+        };
     }
 
     private ReentrantLock obterLock(String codigoSala) {
-        // devolver o lock da sala, criando um novo se ainda não existir (computeIfAbsent)
-
-        // pergunta: quando uma partida termina ou a sala é removida, esse lock também precisa ser removido,
-        // senão o mapa cresce para sempre. Onde isso deve acontecer?
-        throw new UnsupportedOperationException("implementar obterLock");
+        return this.locksPorSala.computeIfAbsent(codigoSala, c -> new ReentrantLock());
     }
 }
