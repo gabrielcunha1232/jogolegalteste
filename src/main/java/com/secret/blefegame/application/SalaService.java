@@ -1,13 +1,14 @@
 package com.secret.blefegame.application;
 
 import com.secret.blefegame.application.command.Comando;
+import com.secret.blefegame.domain.Partida;
+import com.secret.blefegame.domain.excecao.AcaoInvalidaException;
 import org.springframework.stereotype.Service;
 
 import java.security.SecureRandom;
+import java.util.Objects;
 import java.util.UUID;
 
-// Casos de uso fora do jogo em si: criar sala e entrar nela.
-// Chamado pelos endpoints REST (POST /api/salas, POST /api/salas/{codigo}/jogadores).
 @Service
 public class SalaService {
 
@@ -18,52 +19,65 @@ public class SalaService {
     private final PartidaCommandHandler handler;
     private final SecureRandom random = new SecureRandom();
 
+    private static final String ALFABETO = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    private static final int TAMANHO_CODIGO = 5;
+    private static final int MAX_TENTATIVAS = 20;
+
     public SalaService(PartidaRepository repository, PartidaCommandHandler handler) {
-        // atribuir repository e handler (validar que não são nulos)
-        throw new UnsupportedOperationException("implementar construtor");
+        this.repository = Objects.requireNonNull(repository, "repositorio nao pode estar nulo");
+        this.handler = Objects.requireNonNull(handler, "handler nao pode estar nulo");
     }
 
     public SalaCriada criarSala(String nomeHost) {
-        // validar nomeHost (não nulo, não em branco)
+        Objects.requireNonNull(nomeHost, "nome do host nao pode estar nulo");
+        if (nomeHost.isBlank()) {
+            throw new AcaoInvalidaException("Nome do host está vazio");
+        }
 
-        // gerar um id novo para o anfitrião (UUID.randomUUID())
+        UUID novoIdAnfitriao = UUID.randomUUID();
+        String codigoDaSala = gerarCodigoUnico();
 
-        // gerar um código de sala único: gerarCodigoUnico()
+        Partida novaPartida = new Partida(novoIdAnfitriao, nomeHost, codigoDaSala, this.random);
+        this.repository.salvar(novaPartida);
 
-        // criar a Partida com (idDoAnfitriao, nomeHost, codigo, gerador de aleatoriedade)
-        // sobre o gerador: em produção use SecureRandom (um Random previsível permitiria adivinhar papéis);
-        // nos testes, use new Random(semente) para o sorteio ser reproduzível. Por isso ele é injetado.
-
-        // salvar a partida no repositório
-
-        // retornar SalaCriada com o código e o id do anfitrião
-        // (o token que liga o cliente a esse id é responsabilidade da infra; não misture aqui)
-        throw new UnsupportedOperationException("implementar criarSala");
+        return new SalaCriada(codigoDaSala, novoIdAnfitriao);
     }
 
     public UUID entrarNaSala(String codigoSala, String nome) {
-        // validar codigoSala e nome
+        Objects.requireNonNull(codigoSala, "codigo da sala nao pode estar vazio");
+        Objects.requireNonNull(nome, "nome nao pode estar vazio");
 
-        // gerar um id novo para o jogador
+        if (codigoSala.isBlank() || nome.isBlank()) {
+            throw new AcaoInvalidaException("existem campos em branco");
+        }
 
-        // despachar um Comando.Entrar pelo handler (assim a regra de lock e publicação é a mesma de qualquer ação)
+        UUID novoJogadorId = UUID.randomUUID();
 
-        // retornar o id gerado
-        throw new UnsupportedOperationException("implementar entrarNaSala");
+        Comando.Entrar comando = new Comando.Entrar(codigoSala, novoJogadorId, nome);
+        this.handler.tratar(comando);
+        return novoJogadorId;
     }
 
     public boolean salaExiste(String codigoSala) {
-        // delegar para o repositório
-        throw new UnsupportedOperationException("implementar salaExiste");
+        return this.repository.existe(codigoSala);
     }
 
     private String gerarCodigoUnico() {
-        // gerar um código curto (por exemplo 5 caracteres) com letras e números, evitando os ambíguos (0/O, 1/I)
-        // usando o SecureRandom
+        for (int tentativa = 0; tentativa < MAX_TENTATIVAS; tentativa++) {
+            StringBuilder codigo = new StringBuilder(TAMANHO_CODIGO);
 
-        // se já existir no repositório, gerar outro (com um limite de tentativas para não ficar em laço infinito)
+            for (int i = 0; i < TAMANHO_CODIGO; i++) {
+                int indice = this.random.nextInt(ALFABETO.length());
+                codigo.append(ALFABETO.charAt(indice));
+            }
 
-        // retornar o código
-        throw new UnsupportedOperationException("implementar gerarCodigoUnico");
+            String code = codigo.toString();
+
+            if (!this.repository.existe(code)) {
+                return code;
+            }
+        }
+
+        throw new IllegalStateException("nao foi possivel gerar um codigo de sala unico");
     }
 }
